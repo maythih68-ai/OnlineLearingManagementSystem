@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CloverLMS</title>
+  
+  <!-- Tailwind CSS Engine -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React & React DOM Core Libraries -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  
+  <!-- Babel Compiler -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div id="root"></div>
+
+  <!-- Load React Components -->
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const API_BASE = 'http://localhost:3001/api';
+
+    // Lucide Icon Helper component
+    const Icon = ({ name, className = "w-5 h-5", ...props }) => {
+      useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      }, [name]);
+      return <i data-lucide={name} className={className} {...props}></i>;
+    };
+
+    function App() {
+      const [currentUser, setCurrentUser] = useState(null);
+      const [courses, setCourses] = useState([]);
+      const [assignments, setAssignments] = useState([]);
+      const [lectures, setLectures] = useState([]);
+      const [enrollments, setEnrollments] = useState([]);
+      const [submissions, setSubmissions] = useState([]);
+
+      useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      });
+
+      // Fetch Courses when user logs in
+      useEffect(() => {
+        if (currentUser) {
+          fetch(`${API_BASE}/courses`)
+            .then(res => res.json())
+            .then(data => setCourses(data))
+            .catch(err => console.error('Error loading courses:', err));
+        }
+      }, [currentUser]);
+
+      // LOGIN Handler connected to MySQL Backend
+      const handleLogin = async (username, password, authRole) => {
+        try {
+          const res = await fetch(`${API_BASE}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, role: authRole })
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            return { success: false, error: data.error || 'Login failed.' };
+          }
+
+          // Check role compatibility
+          if (authRole === 'uni_student' && data.user.role !== 'uni_student') {
+            return { success: false, error: 'Access denied. Use the Uni Student portal.' };
+          }
+          if (authRole === 'instructor' && data.user.role !== 'instructor') {
+            return { success: false, error: 'Access denied. Use the Instructor portal.' };
+          }
+          if (authRole === 'out_login' && data.user.role !== 'out_student') {
+            return { success: false, error: 'Access denied. Use the Outside Student portal.' };
+          }
+
+          setCurrentUser(data.user);
+          return { success: true, user: data.user };
+        } catch (err) {
+          return { success: false, error: 'Cannot connect to backend server on http://localhost:3001' };
+        }
+      };
+
+      // SIGNUP Handler connected to MySQL Backend
+      const handleSignup = async (userData) => {
+        try {
+          const res = await fetch(`${API_BASE}/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: userData.username,
+              password: userData.password,
+              name: userData.name
+            })
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            return { success: false, error: data.error || 'Registration failed.' };
+          }
+
+          setCurrentUser(data.user);
+          return { success: true, user: data.user };
+        } catch (err) {
+          return { success: false, error: 'Cannot connect to backend server on http://localhost:3001' };
+        }
+      };
+
+      const handleLogout = () => setCurrentUser(null);
+
+      const handleEnroll = (courseId) => {
+        setEnrollments(prev => [...prev, {
+          enrollment_id: `e${Date.now()}`,
+          student_id: currentUser.student_id || currentUser.id,
+          course_id: courseId,
+          enroll_date: new Date().toISOString().split('T')[0],
+          enrollment_status: 'Active'
+        }]);
+      };
+
+      const handleAddAssignment = (newAssignmentData) => {
+        setAssignments(prev => [...prev, { ...newAssignmentData, assignment_id: `a${Date.now()}` }]);
+      };
+
+      const handleSubmitAssignment = (submissionData) => {
+        setSubmissions(prev => [...prev, {
+          ...submissionData,
+          submission_id: `s${Date.now()}`,
+          submitted_date: new Date().toISOString().split('T')[0],
+          status: 'Submitted',
+          marks: null,
+          feedback: ''
+        }]);
+      };
+
+      const handleGradeSubmission = (submissionId, marks, feedback) => {
+        setSubmissions(prev => prev.map(s => s.submission_id === submissionId ? { ...s, marks, feedback, status: 'Graded' } : s));
+      };
+
+      if (!currentUser) {
+        return <AuthScreen onLogin={handleLogin} onSignup={handleSignup} />;
+      }
+
+      const isUni = currentUser.student_type === 'Uni' || currentUser.role === 'uni_student';
+
+      return (
+        <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
+          <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="bg-green-600 p-2 rounded-lg text-white">
+                  <Icon name="book-open" />
+                </div>
+                <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-emerald-600">
+                  CloverLMS
+                </span>
+              </div>
+              
+              <div className="flex items-center space-x-4">
+                <span className="text-sm font-medium text-gray-500 hidden sm:block">
+                  Role: <span className="text-green-600 font-bold">{isUni ? 'University' : currentUser.role === 'instructor' ? 'Instructor' : 'Outside'}</span>
+                </span>
+                <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold border border-green-200">
+                  {currentUser.name.charAt(0)}
+                </div>
+                <button onClick={handleLogout} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg">
+                  <Icon name="log-out" />
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="mb-8">
+              <h1 className="text-3xl font-extrabold text-gray-900">Welcome, {currentUser.name.split(' ')[0]}!</h1>
+              <p className="text-gray-500 mt-2 text-lg">Here is your dashboard connected to MySQL.</p>
+            </div>
+
+            {currentUser.role === 'instructor' ? (
+              <InstructorDashboard 
+                user={currentUser}
+                courses={courses}
+                assignments={assignments}
+                submissions={submissions}
+                lectures={lectures}
+                onAddAssignment={handleAddAssignment}
+                onGrade={handleGradeSubmission}
+              />
+            ) : (
+              <StudentDashboard 
+                user={currentUser} 
+                courses={courses} 
+                enrollments={enrollments}
+                assignments={assignments}
+                submissions={submissions}
+                lectures={lectures}
+                onEnroll={handleEnroll}
+                onSubmit={handleSubmitAssignment}
+              />
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    function InstructorDashboard({ user, courses, assignments, submissions, lectures, onAddAssignment, onGrade }) {
+      const myCourses = courses.filter(c => c.instructor_id === (user.instructor_id || user.id));
+      const [selectedCourse, setSelectedCourse] = useState(myCourses[0]?.course_id);
+      const [showAddModal, setShowAddModal] = useState(false);
+
+      const courseAssignments = assignments.filter(a => a.course_id === selectedCourse);
+      const courseLectures = lectures.filter(l => l.course_id === selectedCourse);
+
+      return (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="lg:col-span-1 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 self-start">
+            <h3 className="font-bold text-gray-800 mb-4 px-2 uppercase text-xs tracking-wider">My Courses</h3>
+            <div className="space-y-2">
+              {myCourses.map(course => (
+                <button
+                  key={course.course_id}
+                  onClick={() => setSelectedCourse(course.course_id)}
+                  className={`w-full text-left px-4 py-3 rounded-xl transition-all ${
+                    selectedCourse === course.course_id 
+                      ? 'bg-green-50 text-green-700 font-semibold shadow-sm border border-green-100' 
+                      : 'text-gray-600 hover:bg-gray-50 border border-transparent'
+                  }`}
+                >
+                  {course.course_name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="lg:col-span-3 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-h-[600px]">
+            {selectedCourse ? (
+              <div>
+                <div className="flex justify-between items-center mb-8 pb-4 border-b border-gray-100">
+                  <h2 className="text-2xl font-bold text-gray-800">Course Management</h2>
+                  <button 
+                    onClick={() => setShowAddModal(true)}
+                    className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm font-medium"
+                  >
+                    <Icon name="plus" className="mr-2" /> New Assignment
+                  </button>
+                </div>
+
+                <div className="mb-10">
+                  <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <Icon name="video" className="mr-2 text-green-500" /> Uploaded Lectures
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {courseLectures.map(lecture => (
+                      <div key={lecture.lecture_id} className="border border-gray-200 rounded-xl p-4 flex items-center bg-white shadow-sm">
+                        <div className="bg-green-50 p-2 rounded-full mr-4 text-green-600">
+                          <Icon name="play-circle" className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-gray-800 text-sm">{lecture.title}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">Duration: {lecture.duration}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <Icon name="file-text" className="mr-2 text-green-500" /> Assignments & Submissions
+                  </h3>
+                  <div className="space-y-6">
+                    {courseAssignments.map(assignment => {
+                      const assignmentSubmissions = submissions.filter(s => s.assignment_id === assignment.assignment_id);
+                      return (
+                        <div key={assignment.assignment_id} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                          <div className="bg-gray-50 px-5 py-4 border-b border-gray-200 flex justify-between items-center">
+                            <div>
+                              <h4 className="font-bold text-gray-900">{assignment.title}</h4>
+                              <p className="text-sm text-gray-500 mt-1">Due: {assignment.due_date} | Total Marks: {assignment.total_marks}</p>
+                            </div>
+                            <span className="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-1 rounded-full">
+                              {assignmentSubmissions.length} Submissions
+                            </span>
+                          </div>
+                          
+                          <div className="p-4">
+                            {assignmentSubmissions.length === 0 ? (
+                              <div className="text-sm text-gray-500 text-center italic">No submissions yet.</div>
+                            ) : (
+                              <ul className="divide-y divide-gray-100">
+                                {assignmentSubmissions.map(sub => (
+                                  <li key={sub.submission_id} className="py-3 flex justify-between items-center">
+                                    <div>
+                                      <div className="font-medium text-gray-900">Student ID: {sub.student_id}</div>
+                                      <div className="text-sm text-green-600">{sub.file_path}</div>
+                                    </div>
+                                    {sub.status === 'Graded' ? (
+                                      <span className="font-bold text-green-700">{sub.marks} / {assignment.total_marks}</span>
+                                    ) : (
+                                      <GradeForm submission={sub} maxMarks={assignment.total_marks} onGrade={onGrade} />
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {showAddModal && <AddAssignmentModal courseId={selectedCourse} onClose={() => setShowAddModal(false)} onAdd={onAddAssignment} />}
+        </div>
+      );
+    }
+
+    function GradeForm({ submission, maxMarks, onGrade }) {
+      const [marks, setMarks] = useState('');
+      const [feedback, setFeedback] = useState('');
+
+      return (
+        <form onSubmit={(e) => { e.preventDefault(); onGrade(submission.submission_id, marks, feedback); }} className="flex gap-2">
+          <input type="number" placeholder={`/ ${maxMarks}`} className="w-20 border rounded p-1 text-sm" value={marks} onChange={e => setMarks(e.target.value)} required />
+          <input type="text" placeholder="Feedback..." className="border rounded p-1 text-sm" value={feedback} onChange={e => setFeedback(e.target.value)} required />
+          <button type="submit" className="bg-green-600 text-white px-3 py-1 rounded text-sm">Save</button>
+        </form>
+      );
+    }
+
+    function AddAssignmentModal({ courseId, onClose, onAdd }) {
+      const [title, setTitle] = useState('');
+      const [description, setDescription] = useState('');
+      const [dueDate, setDueDate] = useState('');
+      const [marks, setMarks] = useState('');
+
+      return (
+        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
+            <h3 className="text-xl font-bold mb-4">Create Assignment</h3>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              onAdd({ course_id: courseId, title, description, due_date: dueDate, total_marks: parseInt(marks) });
+              onClose();
+            }} className="space-y-4">
+              <input type="text" placeholder="Title" required value={title} onChange={e => setTitle(e.target.value)} className="w-full border p-2 rounded-lg" />
+              <textarea placeholder="Description" required value={description} onChange={e => setDescription(e.target.value)} className="w-full border p-2 rounded-lg" rows={3}></textarea>
+              <input type="date" required value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full border p-2 rounded-lg" />
+              <input type="number" placeholder="Total Marks" required value={marks} onChange={e => setMarks(e.target.value)} className="w-full border p-2 rounded-lg" />
+              <div className="flex justify-end space-x-2 pt-2">
+                <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg">Create</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    function StudentDashboard({ user, courses, enrollments, assignments, submissions, lectures, onEnroll, onSubmit }) {
+      const [activeTab, setActiveTab] = useState('catalog');
+      const [paymentCourse, setPaymentCourse] = useState(null);
+
+      const userId = user.student_id || user.id;
+      const isUni = user.student_type === 'Uni' || user.role === 'uni_student';
+
+      const myEnrolledCourseIds = enrollments.filter(e => e.student_id === userId).map(e => e.course_id);
+      const myCourses = courses.filter(c => myEnrolledCourseIds.includes(c.course_id));
+      const availableCourses = courses.filter(c => !myEnrolledCourseIds.includes(c.course_id));
+
+      const handleEnrollClick = (course) => {
+        if (isUni) {
+          onEnroll(course.course_id);
+          setActiveTab('my_courses');
+        } else {
+          setPaymentCourse(course);
+        }
+      };
+
+      return (
+        <div>
+          <div className="flex space-x-2 mb-6">
+            <button onClick={() => setActiveTab('catalog')} className={`px-4 py-2 rounded-lg font-medium ${activeTab === 'catalog' ? 'bg-white shadow text-green-700' : 'text-gray-600'}`}>Course Catalog</button>
+            <button onClick={() => setActiveTab('my_courses')} className={`px-4 py-2 rounded-lg font-medium ${activeTab === 'my_courses' ? 'bg-white shadow text-green-700' : 'text-gray-600'}`}>My Learning ({myCourses.length})</button>
+          </div>
+
+          {activeTab === 'catalog' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {availableCourses.map(course => (
+                <div key={course.course_id} className="bg-white border rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-xl font-bold mb-2">{course.course_name}</h3>
+                    <p className="text-gray-600 text-sm mb-4">{course.description}</p>
+                  </div>
+                  <div>
+                    <div className="flex justify-between items-center mb-4">
+                      <span className="text-sm text-gray-500">{course.credits} Credits</span>
+                      <span className="font-bold text-green-600">{isUni ? 'Free (Uni)' : `$${course.price}`}</span>
+                    </div>
+                    <button onClick={() => handleEnrollClick(course)} className="w-full bg-green-600 text-white py-2 rounded-xl font-medium hover:bg-green-700">
+                      {isUni ? 'Enroll Now' : 'Pay & Enroll'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {myCourses.length === 0 ? (
+                <div className="text-center py-12 bg-white border rounded-2xl text-gray-500">You have not enrolled in any courses yet.</div>
+              ) : (
+                myCourses.map(course => (
+                  <StudentCourseDetail 
+                    key={course.course_id} 
+                    user={user} 
+                    course={course} 
+                    assignments={assignments.filter(a => a.course_id === course.course_id)}
+                    submissions={submissions}
+                    lectures={lectures.filter(l => l.course_id === course.course_id)}
+                    onSubmit={onSubmit}
+                  />
+                ))
+              )}
+            </div>
+          )}
+
+          {paymentCourse && (
+            <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl text-center">
+                <h3 className="text-xl font-bold mb-2">Checkout</h3>
+                <p className="text-gray-600 mb-4">Course: {paymentCourse.course_name}</p>
+                <div className="text-2xl font-bold text-green-600 mb-6">${paymentCourse.price}</div>
+                <button onClick={() => { onEnroll(paymentCourse.course_id); setPaymentCourse(null); setActiveTab('my_courses'); }} className="w-full bg-green-600 text-white py-2.5 rounded-xl font-bold mb-2">
+                  Confirm Payment & Enroll
+                </button>
+                <button onClick={() => setPaymentCourse(null)} className="w-full text-gray-500 py-2">Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function StudentCourseDetail({ user, course, assignments, submissions, lectures, onSubmit }) {
+      const [activeSubTab, setActiveSubTab] = useState('lectures');
+      const [selectedLecture, setSelectedLecture] = useState(lectures[0] || null);
+      const [uploadingAssignment, setUploadingAssignment] = useState(null);
+      const [fileName, setFileName] = useState('');
+
+      return (
+        <div className="bg-white border rounded-2xl p-6 shadow-sm">
+          <h2 className="text-2xl font-bold mb-4">{course.course_name}</h2>
+          
+          <div className="flex border-b mb-6 space-x-6">
+            <button onClick={() => setActiveSubTab('lectures')} className={`pb-2 font-bold ${activeSubTab === 'lectures' ? 'border-b-2 border-green-600 text-green-700' : 'text-gray-500'}`}>
+              Lectures ({lectures.length})
+            </button>
+            <button onClick={() => setActiveSubTab('assignments')} className={`pb-2 font-bold ${activeSubTab === 'assignments' ? 'border-b-2 border-green-600 text-green-700' : 'text-gray-500'}`}>
+              Assignments ({assignments.length})
+            </button>
+          </div>
+
+          {activeSubTab === 'lectures' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 bg-black rounded-xl overflow-hidden aspect-video flex flex-col justify-end relative">
+                {selectedLecture ? (
+                  <video controls className="w-full h-full" key={selectedLecture.lecture_id}>
+                    <source src={selectedLecture.url} type="video/mp4" />
+                  </video>
+                ) : (
+                  <div className="text-white text-center m-auto">Select a lecture to view</div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <h4 className="font-bold text-gray-700 mb-2">Course Playlist</h4>
+                {lectures.map(lecture => (
+                  <button 
+                    key={lecture.lecture_id} 
+                    onClick={() => setSelectedLecture(lecture)}
+                    className={`w-full text-left p-3 rounded-xl border flex items-center transition-all ${selectedLecture?.lecture_id === lecture.lecture_id ? 'bg-green-50 border-green-300 font-bold text-green-800' : 'bg-gray-50'}`}
+                  >
+                    <Icon name="play-circle" className="mr-3 text-green-600 flex-shrink-0" />
+                    <div>
+                      <div className="text-sm">{lecture.title}</div>
+                      <div className="text-xs text-gray-500">{lecture.duration}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === 'assignments' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {assignments.map(assignment => {
+                const userId = user.student_id || user.id;
+                const mySub = submissions.find(s => s.assignment_id === assignment.assignment_id && s.student_id === userId);
+                return (
+                  <div key={assignment.assignment_id} className="border p-4 rounded-xl bg-gray-50">
+                    <h4 className="font-bold text-gray-900">{assignment.title}</h4>
+                    <p className="text-xs text-gray-500 my-1">{assignment.description}</p>
+                    <div className="text-xs text-gray-600 font-medium mb-3">Due: {assignment.due_date} | Max Marks: {assignment.total_marks}</div>
+                    
+                    {mySub ? (
+                      <div className="bg-green-100 p-3 rounded-lg text-xs text-green-800">
+                        <div className="font-bold flex items-center"><Icon name="check-circle" className="w-4 h-4 mr-1 text-green-600" /> Submitted ({mySub.file_path})</div>
+                        {mySub.status === 'Graded' && (
+                          <div className="mt-2 pt-2 border-t border-green-200">
+                            <strong>Grade:</strong> {mySub.marks}/{assignment.total_marks}<br/>
+                            <strong>Feedback:</strong> {mySub.feedback}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <button onClick={() => setUploadingAssignment(assignment)} className="w-full bg-green-600 text-white py-2 rounded-lg text-xs font-bold hover:bg-green-700">
+                        Upload Submission
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {uploadingAssignment && (
+            <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl">
+                <h3 className="font-bold text-lg mb-2">Submit Work</h3>
+                <p className="text-xs text-gray-500 mb-4">{uploadingAssignment.title}</p>
+                <input type="text" placeholder="File name (e.g., project.pdf)" required value={fileName} onChange={e => setFileName(e.target.value)} className="w-full border p-2 rounded-lg text-sm mb-4" />
+                <div className="flex justify-end space-x-2">
+                  <button type="button" onClick={() => setUploadingAssignment(null)} className="px-3 py-1.5 bg-gray-100 rounded-lg text-sm">Cancel</button>
+                  <button type="button" onClick={() => {
+                    onSubmit({ assignment_id: uploadingAssignment.assignment_id, student_id: user.student_id || user.id, course_id: course.course_id, file_path: fileName || 'submission.pdf' });
+                    setUploadingAssignment(null);
+                    setFileName('');
+                  }} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-bold">Submit</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function AuthScreen({ onLogin, onSignup }) {
+      const [authMode, setAuthMode] = useState('uni_student');
+      const [username, setUsername] = useState('');
+      const [password, setPassword] = useState('');
+      const [name, setName] = useState('');
+      const [error, setError] = useState('');
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        if (authMode === 'out_signup') {
+          const res = await onSignup({ username, password, name });
+          if (!res.success) setError(res.error);
+        } else {
+          const res = await onLogin(username, password, authMode);
+          if (!res.success) setError(res.error);
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4">
+          <div className="max-w-md w-full mx-auto bg-white p-8 rounded-2xl shadow-md border">
+            <h2 className="text-2xl font-bold text-center text-green-700 mb-6">CloverLMS Portal</h2>
+            
+            <div className="flex bg-gray-100 p-1 rounded-lg mb-6">
+              <button onClick={() => { setAuthMode('uni_student'); setError(''); }} className={`flex-1 py-1.5 text-xs sm:text-sm rounded font-bold ${authMode === 'uni_student' ? 'bg-white text-green-700' : 'text-gray-500'}`}>Uni Student</button>
+              <button onClick={() => { setAuthMode('instructor'); setError(''); }} className={`flex-1 py-1.5 text-xs sm:text-sm rounded font-bold ${authMode === 'instructor' ? 'bg-white text-green-700' : 'text-gray-500'}`}>Instructor</button>
+              <button onClick={() => { setAuthMode('out_login'); setError(''); }} className={`flex-1 py-1.5 text-xs sm:text-sm rounded font-bold ${authMode.startsWith('out') ? 'bg-white text-green-700' : 'text-gray-500'}`}>Outside</button>
+            </div>
+
+            {error && <div className="bg-red-50 text-red-600 p-2.5 rounded-lg text-sm text-center mb-4 font-medium">{error}</div>}
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {authMode === 'out_signup' && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Full Name</label>
+                  <input type="text" placeholder="John Doe" required value={name} onChange={e => setName(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm" />
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Username</label>
+                <input type="text" placeholder="Enter username" required value={username} onChange={e => setUsername(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Password</label>
+                <input type="password" placeholder="••••••••" required value={password} onChange={e => setPassword(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm" />
+              </div>
+
+              <button type="submit" className="w-full bg-green-600 text-white py-2.5 rounded-lg font-bold hover:bg-green-700">
+                {authMode === 'out_signup' ? 'Create Account' : 'Sign In'}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center">
+              {authMode.startsWith('out') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode(authMode === 'out_login' ? 'out_signup' : 'out_login');
+                    setError('');
+                  }}
+                  className="text-xs font-bold text-green-700 hover:underline"
+                >
+                  {authMode === 'out_login' ? 'Create Personal Account' : 'Back to Outside Login'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
